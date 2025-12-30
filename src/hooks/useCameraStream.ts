@@ -28,14 +28,15 @@ export function useCameraStream(): UseCameraStreamReturn {
   const [isLoading, setIsLoading] = useState(false);
 
   // Detect mobile - use multiple indicators
-  const isMobile = useRef<boolean>(() => {
+  const computeIsMobile = () => {
     if (typeof window === 'undefined') return false;
     const ua = navigator.userAgent;
     const hasTouchScreen = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua);
     const isSmallScreen = window.innerWidth <= 768;
     return hasTouchScreen && (isMobileUA || isSmallScreen);
-  });
+  };
+  const isMobile = useRef<boolean>(computeIsMobile());
 
   // Get stored camera preference
   const getStoredCamera = useCallback(() => {
@@ -122,7 +123,7 @@ export function useCameraStream(): UseCameraStreamReturn {
         stream.getTracks().forEach(track => track.stop());
       }
 
-      let newStream: MediaStream;
+      let newStream: MediaStream | null = null;
       let selectedDeviceId: string | null = null;
 
       // Check if user has stored preference
