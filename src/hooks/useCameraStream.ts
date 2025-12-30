@@ -183,6 +183,9 @@ export function useCameraStream(): UseCameraStreamReturn {
       setStream(newStream);
       setCurrentDeviceId(selectedDeviceId);
 
+      // Update device list with labels after permission
+      await enumerateDevices();
+
       // Store preference if we have a device ID
       if (selectedDeviceId) {
         storeCamera(selectedDeviceId);
@@ -225,6 +228,9 @@ export function useCameraStream(): UseCameraStreamReturn {
       setStream(newStream);
       setCurrentDeviceId(deviceId);
       storeCamera(deviceId);
+
+      // Update device list with labels after permission
+      await enumerateDevices();
 
     } catch (err: any) {
       console.error('Error switching camera:', err);
