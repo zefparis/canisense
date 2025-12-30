@@ -15,7 +15,7 @@ interface UseCameraStreamReturn {
   error: string | null;
   isMobile: boolean;
   isLoading: boolean;
-  requestCamera: () => Promise<void>;
+  requestCamera: () => Promise<MediaStream | null>;
   switchCamera: (deviceId: string) => Promise<void>;
   stopCamera: () => void;
 }
@@ -191,6 +191,7 @@ export function useCameraStream(): UseCameraStreamReturn {
         storeCamera(selectedDeviceId);
       }
 
+      return newStream;
     } catch (err: any) {
       console.error('Error requesting camera:', err);
       let errorMessage = 'Erreur d\'accès à la caméra.';
@@ -206,6 +207,7 @@ export function useCameraStream(): UseCameraStreamReturn {
       }
 
       setError(errorMessage);
+      return null;
     } finally {
       setIsLoading(false);
     }

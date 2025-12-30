@@ -25,10 +25,9 @@ export default function Observer() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  const { stream, devices, currentDeviceId, error, isLoading, requestCamera, switchCamera, stopCamera } = useCameraStream();
+  const { stream, devices, currentDeviceId, error, isMobile, isLoading, requestCamera, switchCamera, stopCamera } = useCameraStream();
 
   const config: AnalysisConfig = {
     enableDebug: debugMode,
@@ -41,28 +40,35 @@ export default function Observer() {
     fusionWeights: {}
   };
 
+  const cycleCamera = () => {
+    if (devices.length > 1) {
+      const currentIndex = devices.findIndex(d => d.deviceId === currentDeviceId);
+      const nextIndex = (currentIndex + 1) % devices.length;
+      switchCamera(devices[nextIndex].deviceId);
+    }
+  };
+
   useEffect(() => {
-    if (videoRef.current && stream) {
+    if (videoRef.current) {
       videoRef.current.srcObject = stream;
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
-      if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
       if (audioContextRef.current) audioContextRef.current.close();
     };
   }, [stream]);
 
   const startAnalysis = async () => {
     try {
-      await requestCamera();
+      const newStream = await requestCamera();
 
       // Setup audio
-      if (stream) {
+      if (newStream) {
         const audioContext = new AudioContext();
         audioContextRef.current = audioContext;
         const analyser = audioContext.createAnalyser();
         analyserRef.current = analyser;
-        const source = audioContext.createMediaStreamSource(stream);
+        const source = audioContext.createMediaStreamSource(newStream);
         source.connect(analyser);
 
       }
@@ -130,7 +136,6 @@ export default function Observer() {
 
     } catch (err) {
       console.error('Error starting analysis:', err);
-      alert('Erreur d\'accès à la caméra/micro. Vérifiez les permissions.');
     }
   };
 
@@ -207,15 +212,25 @@ export default function Observer() {
             </div>
           )}
           {error && <p className="text-red-400 mb-4">{error}</p>}
+          {!isMobile && <p className="text-yellow-400 mb-4">Pour de meilleurs résultats, utilisez un smartphone.</p>}
           <p className="text-base mb-4 sm:text-lg">{statusText[status]}</p>
           {status === 'ready' && (
             <div className="space-y-4">
               <button
                 onClick={startAnalysis}
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium sm:px-6 sm:py-3"
+                disabled={isLoading}
+                className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg font-medium sm:px-6 sm:py-3"
               >
-                Démarrer l'analyse
+                {isLoading ? 'Chargement...' : 'Démarrer l\'analyse'}
               </button>
+              {devices.length > 1 && (
+                <button
+                  onClick={cycleCamera}
+                  className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium text-sm"
+                >
+                  Changer de caméra
+                </button>
+              )}
               <br />
               <button
                 onClick={() => setDebugMode(!debugMode)}
