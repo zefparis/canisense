@@ -5,6 +5,7 @@ import { AnalysisPipeline } from '../../analysis/pipeline';
 import { AnalysisConfig, Signal, UserFeedback } from '../../analysis/types';
 import { Line } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend } from 'chart.js';
+import { useCameraStream } from '../../hooks/useCameraStream';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -27,6 +28,8 @@ export default function Observer() {
   const streamRef = useRef<MediaStream | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  const { stream, devices, currentDeviceId, error, isLoading, requestCamera, switchCamera, stopCamera } = useCameraStream();
+
   const config: AnalysisConfig = {
     enableDebug: debugMode,
     activeEngines: [
@@ -39,29 +42,30 @@ export default function Observer() {
   };
 
   useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
       if (audioContextRef.current) audioContextRef.current.close();
     };
-  }, []);
+  }, [stream]);
 
   const startAnalysis = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
+      await requestCamera();
 
       // Setup audio
-      const audioContext = new AudioContext();
-      audioContextRef.current = audioContext;
-      const analyser = audioContext.createAnalyser();
-      analyserRef.current = analyser;
-      const source = audioContext.createMediaStreamSource(stream);
-      source.connect(analyser);
+      if (stream) {
+        const audioContext = new AudioContext();
+        audioContextRef.current = audioContext;
+        const analyser = audioContext.createAnalyser();
+        analyserRef.current = analyser;
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
 
+      }
       const newPipeline = new AnalysisPipeline(config);
       setPipeline(newPipeline);
       setStatus('analyzing');
@@ -132,7 +136,7 @@ export default function Observer() {
 
   const stopAnalysis = () => {
     if (intervalRef.current) clearInterval(intervalRef.current);
-    if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop());
+    stopCamera();
     if (audioContextRef.current) audioContextRef.current.close();
     if (pipeline) {
       const analysis = pipeline.getAnalysis();
@@ -184,8 +188,25 @@ export default function Observer() {
           <div className="bg-slate-700 h-48 rounded-lg flex items-center justify-center mb-4 sm:h-64 relative">
             <video ref={videoRef} autoPlay muted className="w-full h-full object-cover rounded-lg" />
             <canvas ref={canvasRef} className="hidden" />
-            {!streamRef.current && <p className="text-gray-400 absolute">Aperçu caméra</p>}
+            {!stream && <p className="text-gray-400 absolute">Aperçu caméra</p>}
           </div>
+          {devices.length > 1 && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">Caméra</label>
+              <select
+                value={currentDeviceId || ''}
+                onChange={(e) => switchCamera(e.target.value)}
+                className="w-full bg-slate-600 border border-slate-500 rounded-lg px-3 py-2 text-white"
+              >
+                {devices.map((device) => (
+                  <option key={device.deviceId} value={device.deviceId}>
+                    {device.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {error && <p className="text-red-400 mb-4">{error}</p>}
           <p className="text-base mb-4 sm:text-lg">{statusText[status]}</p>
           {status === 'ready' && (
             <div className="space-y-4">
