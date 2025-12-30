@@ -18,6 +18,9 @@ type AnalysisResult = {
 export default function Observer() {
   const [status, setStatus] = useState<'ready' | 'analyzing' | 'done'>('ready');
   const [result, setResult] = useState<AnalysisResult | null>(null);
+  const [frameCount, setFrameCount] = useState(0);
+  const [movementLevel, setMovementLevel] = useState(0);
+  const [audioLevel, setAudioLevel] = useState(0);
   const [debugMode, setDebugMode] = useState(false);
   const [pipeline, setPipeline] = useState<AnalysisPipeline | null>(null);
   const [chartData, setChartData] = useState<any>({});
@@ -26,6 +29,7 @@ export default function Observer() {
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const previousImageDataRef = useRef<ImageData | null>(null);
 
   const { stream, devices, currentDeviceId, error, isMobile, isLoading, requestCamera, switchCamera, stopCamera } = useCameraStream();
 
@@ -73,6 +77,7 @@ export default function Observer() {
 
       }
       const newPipeline = new AnalysisPipeline(config);
+      console.log('Pipeline initialisée avec', config.activeEngines.length, 'moteurs actifs');
       setPipeline(newPipeline);
       setStatus('analyzing');
 
@@ -85,7 +90,33 @@ export default function Observer() {
             canvas.width = videoRef.current.videoWidth;
             canvas.height = videoRef.current.videoHeight;
             ctx.drawImage(videoRef.current, 0, 0);
+            // Visual proof: draw test pixel
+            ctx.fillStyle = 'red';
+            ctx.fillRect(10, 10, 5, 5);
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            // Calculate movement
+            if (previousImageDataRef.current) {
+              let diff = 0;
+              const data1 = imageData.data;
+              const data2 = previousImageDataRef.current.data;
+              for (let i = 0; i < data1.length; i += 4) {
+                const lum1 = 0.299 * data1[i] + 0.587 * data1[i+1] + 0.114 * data1[i+2];
+                const lum2 = 0.299 * data2[i] + 0.587 * data2[i+1] + 0.114 * data2[i+2];
+                diff += Math.abs(lum1 - lum2);
+              }
+              const maxDiff = imageData.width * imageData.height * 255;
+              const movement = Math.min(diff / maxDiff, 1);
+              setMovementLevel(movement);
+            }
+
+            previousImageDataRef.current = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+
+            setFrameCount(prev => {
+              const newCount = prev + 1;
+              console.log('Frame capturée #', newCount);
+              return newCount;
+            });
 
             const videoSignal: Signal = {
               type: 'video',
@@ -103,6 +134,15 @@ export default function Observer() {
           analyserRef.current.getFloatTimeDomainData(buffer);
           const audioBuffer = audioContextRef.current.createBuffer(1, bufferLength, audioContextRef.current.sampleRate);
           audioBuffer.getChannelData(0).set(buffer);
+
+          // Calculate RMS for audio level
+          let sum = 0;
+          for (let i = 0; i < buffer.length; i++) {
+            sum += buffer[i] * buffer[i];
+          }
+          const rms = Math.sqrt(sum / buffer.length);
+          setAudioLevel(rms);
+          console.log('Audio capturé, niveau RMS:', rms.toFixed(3));
 
           const audioSignal: Signal = {
             type: 'audio',
@@ -213,7 +253,16 @@ export default function Observer() {
           )}
           {error && <p className="text-red-400 mb-4">{error}</p>}
           {!isMobile && <p className="text-yellow-400 mb-4">Pour de meilleurs résultats, utilisez un smartphone.</p>}
-          <p className="text-base mb-4 sm:text-lg">{statusText[status]}</p>
+          {status === 'analyzing' && (
+            <div className="mb-4 p-3 bg-green-800 rounded-lg">
+              <p className="text-green-200 font-semibold">Analyse active</p>
+              <div className="text-sm text-gray-300 mt-2 space-y-1">
+                <p>Frames analysées: {frameCount}</p>
+                <p>Mouvement: {(movementLevel * 100).toFixed(0)}%</p>
+                <p>Audio: {audioLevel.toFixed(3)}</p>
+              </div>
+            </div>
+          )}
           {status === 'ready' && (
             <div className="space-y-4">
               <button
@@ -264,6 +313,10 @@ export default function Observer() {
         {debugMode && pipeline && (
           <div className="bg-slate-800 rounded-lg p-4 mt-6 sm:p-6 space-y-4">
             <h2 className="text-lg font-semibold">Debug - Métriques</h2>
+            <div className="text-sm text-gray-300 mb-4">
+              <p>Frames analysées: {frameCount}</p>
+              <p>Dernière frame: {new Date().toLocaleTimeString()}</p>
+            </div>
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {pipeline.getAllMetrics().map((metric, index) => (
                 <div key={index} className="text-sm">
